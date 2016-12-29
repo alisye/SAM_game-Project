@@ -11,32 +11,9 @@
 #include <time.h>
 #include <SDL2/SDL.h>
 #include <SDL2_image/SDL_image.h>
-#define GRAVITY 0.06f
-
-
-typedef struct Ledge{
-    int x;
-    int y;
-    int w;
-    int h;
-}Ledge;
-
-typedef struct Position{
-    float x;
-    float y;
-    float dy;
-    int onLedge;
-}Position;
-
-typedef struct GameState{
-    Position mortyPosition;
-    Ledge ledges[100];
-    SDL_Renderer *renderer;
-    SDL_Window *window;
-    SDL_Texture *morty[2];
-    SDL_Texture *brick;
-}GameState;
-
+#include "main.h"
+#include "GameStatus.h"
+#define GRAVITY 0.1f
 
 int eventHandle(SDL_Window *window, GameState *gstate){
     SDL_Event event;
@@ -77,31 +54,73 @@ int eventHandle(SDL_Window *window, GameState *gstate){
         }
         const Uint8 *state = SDL_GetKeyboardState(NULL);
         if (state[SDL_SCANCODE_LEFT]){
-            gstate->mortyPosition.x -= 8;
+            gstate->mortyPosition.facingLeft = 1;
+            gstate->mortyPosition.dx -= 0.5;
+            gstate->mortyPosition.slow = 0;
+            if (gstate->mortyPosition.dx < -5) {
+                gstate->mortyPosition.dx = 6;
+            }
         }else if (state[SDL_SCANCODE_RIGHT]){
-            gstate->mortyPosition.x += 8;
+            gstate->mortyPosition.facingLeft = 0;
+            gstate->mortyPosition.slow = 0;
+            gstate->mortyPosition.dx += 0.5;
+            if (gstate->mortyPosition.dx > 6) {
+                gstate->mortyPosition.dx = 6;
+            }
+        }
+        //friction
+        else{
+            gstate->mortyPosition.animationFrame = 0;
+            gstate->mortyPosition.slow = 1;
+            gstate->mortyPosition.dx *= 0.24f;
+            if (fabs(gstate->mortyPosition.dx) < 0.2f) {
+                gstate->mortyPosition.dx = 0;
+            }
         }
     }
     return quit;
 }
 
 void renderGrpahics(GameState *gstate){
-    
-    SDL_SetRenderDrawColor(gstate->renderer, 0, 255, 0, 255);
-    SDL_RenderClear(gstate->renderer);
-    for (int i=0; i<100; i++) {
-        SDL_Rect ledgeRect ={gstate->ledges[i].x, gstate->ledges[i].y, gstate->ledges[i].w, gstate->ledges[i].h};
-        SDL_RenderCopy(gstate->renderer, gstate->brick, NULL, &ledgeRect);
+    if (gstate->displayStatusScreen == STATUS_DISPLAY_LIVES) {
+        draw_lives(gstate);
+    }else if (gstate->displayStatusScreen == STATUS_DISPLAY_GAME){
+        SDL_SetRenderDrawColor(gstate->renderer, 172, 184, 247, 255);
+        SDL_RenderClear(gstate->renderer);
+        for (int i=0; i<100; i++) {
+            SDL_Rect ledgeRect ={gstate->scrollX + gstate->ledges[i].x, gstate->ledges[i].y, gstate->ledges[i].w, gstate->ledges[i].h};
+            SDL_RenderCopy(gstate->renderer, gstate->brick, NULL, &ledgeRect);
+        }
+        SDL_Rect mortyrect = {gstate->scrollX + gstate->mortyPosition.x, gstate->mortyPosition.y, 50, 68};
+        SDL_RenderCopyEx(gstate->renderer, gstate->morty[gstate->mortyPosition.animationFrame], NULL, &mortyrect,0, NULL, gstate->mortyPosition.facingLeft == 0);
     }
-    SDL_Rect mortyrect = {gstate->mortyPosition.x, gstate->mortyPosition.y, 50, 68};
-    SDL_RenderCopy(gstate->renderer, gstate->morty[0], NULL, &mortyrect);
     SDL_RenderPresent(gstate->renderer);
-
 }
 
 void processVelocity(GameState *gstate){
-    gstate->mortyPosition.y += gstate->mortyPosition.dy;
-    gstate->mortyPosition.dy += GRAVITY;
+    gstate->time++;
+    if (gstate->time > 120) {
+        destroy_lives(gstate);
+        gstate->displayStatusScreen = STATUS_DISPLAY_GAME;
+    }
+    if (gstate->displayStatusScreen == STATUS_DISPLAY_GAME) {
+        gstate->mortyPosition.y += gstate->mortyPosition.dy;
+        gstate->mortyPosition.x += gstate->mortyPosition.dx;
+        gstate->mortyPosition.dy += GRAVITY;
+        gstate->scrollX = -gstate->mortyPosition.x + 320;
+        if (gstate->scrollX > 0) {
+            gstate->scrollX = 0;
+        }
+        if (fabs(gstate->mortyPosition.dx) > 0 && gstate->mortyPosition.onLedge && !gstate->mortyPosition.   slow) {
+            if (gstate->time%5 == 0) {
+                if (gstate->mortyPosition.animationFrame == 0) {
+                    gstate->mortyPosition.animationFrame = 1;
+                }else {
+                    gstate->mortyPosition.animationFrame = 0;
+                }
+            }
+        }
+    }
 }
 
 void hitDetection(GameState *gstate){
@@ -110,46 +129,53 @@ void hitDetection(GameState *gstate){
         float mortyHeight = 68;
         float mortyX = gstate->mortyPosition.x;
         float mortyY = gstate->mortyPosition.y;
-        float birckX = gstate->ledges[i].x;
-        float birckY = gstate->ledges[i].y;
-        float birckWidth = gstate->ledges[i].w;
-        float birckHeight = gstate->ledges[i].h;
+        float brickX = gstate->ledges[i].x;
+        float brickY = gstate->ledges[i].y;
+        float brickWidth = gstate->ledges[i].w;
+        float brickHeight = gstate->ledges[i].h;
         
-        if (mortyHeight + mortyY > birckY && mortyY < birckY + birckHeight) {
-            //right edge
-            if (mortyX < birckX + birckWidth && mortyX + mortyWidth > birckX + birckWidth) {
-                gstate->mortyPosition.x = birckX + birckWidth;
-                mortyX = birckX + birckWidth;
-            }
-            //left edge
-            else if (mortyX + mortyWidth > birckX && mortyX < birckX){
-                gstate->mortyPosition.x = birckX - mortyWidth;
-                mortyX = birckX - mortyWidth;
+        if (mortyWidth/2 +  mortyX > brickX && mortyX + mortyWidth/2 < brickX + brickWidth) {
+            //hitting bottom of brick
+            if (mortyY < brickY + brickHeight && mortyY > brickY && gstate->mortyPosition.dy < 0) {
+                gstate->mortyPosition.y = brickY + brickHeight;
+                mortyY = brickY + brickHeight;
                 
+                gstate->mortyPosition.dy = 0;
+                gstate->mortyPosition.onLedge = 1;
             }
         }
-        if (mortyX + mortyWidth > birckX && mortyX < birckX + birckWidth) {
-            //hitting top
-            if (mortyY < birckY + birckHeight && mortyY > birckY) {
-                gstate->mortyPosition.y = birckY + birckHeight;
+        if (mortyX + mortyWidth > brickX && mortyX < brickX + brickWidth) {
+            //hitting top of brick
+            if (mortyY + mortyHeight > brickY && mortyY < brickY && gstate->mortyPosition.dy > 0) {
+                gstate->mortyPosition.y = brickY - mortyHeight;
+                mortyY = brickY - mortyHeight;
+                
                 gstate->mortyPosition.dy = 0;
                 gstate->mortyPosition.onLedge = 1;
-                mortyY = birckX + birckHeight;
             }
-            //landing
-            else if (mortyY + mortyHeight > birckY && mortyY < birckY){
-                gstate->mortyPosition.y = birckY - mortyHeight;
-                gstate->mortyPosition.dy = 0;
-                gstate->mortyPosition.onLedge = 1;
-                mortyY = birckY - mortyHeight;
+        }
+        if (mortyHeight + mortyY > brickY && mortyY < brickY + brickHeight) {
+            //on right edge of brick
+            if (mortyX < brickX + brickWidth && mortyX + mortyWidth > brickWidth + brickX && gstate->mortyPosition.dx < 0) {
+                gstate->mortyPosition.x = brickX + brickWidth;
+                mortyX = brickX + brickWidth;
+                
+                gstate->mortyPosition.dx = 0;
+            }
+            //on left edge of brick
+            else if (mortyX + mortyWidth > brickX && mortyX < brickX && gstate->mortyPosition.dx > 0){
+                gstate->mortyPosition.x = brickX - mortyWidth;
+                mortyX = brickX - mortyWidth;
+                
+                gstate->mortyPosition.dx = 0;
             }
         }
     }
-    
 }
 
 void loadGame(GameState *gstate){
     SDL_Init(SDL_INIT_VIDEO);
+    TTF_Init();
     SDL_Surface *mortySurface = NULL;
     SDL_Surface *mortyWalkSurface = NULL;
     SDL_Surface *brickSurface = NULL;
@@ -166,7 +192,15 @@ void loadGame(GameState *gstate){
         printf("fcould not find image \n");
         exit(1);
     }
-    
+    gstate->font = TTF_OpenFont("/Users/Ali/Desktop/Learning_C/AlisProgram/Sources/SAM/SAM/Assets/MISFITS_.TTF", 48);
+    if (!gstate->font) {
+        printf("font could not be loaded \n");
+        exit(1);
+    }
+    gstate->label = NULL;
+    gstate->mortyPosition.lives = 3;
+    gstate->displayStatusScreen = STATUS_DISPLAY_LIVES;
+    init_lives(gstate);
     gstate->morty[0] = SDL_CreateTextureFromSurface(gstate->renderer, mortySurface);
     SDL_FreeSurface(mortySurface);
     gstate->morty[1] = SDL_CreateTextureFromSurface(gstate->renderer, mortyWalkSurface);
@@ -174,10 +208,16 @@ void loadGame(GameState *gstate){
     gstate->brick = SDL_CreateTextureFromSurface(gstate->renderer, brickSurface);
     SDL_FreeSurface(brickSurface);
     
+    gstate->time = 0;
+    gstate->scrollX = 0;
     gstate->mortyPosition.x = 220;
     gstate->mortyPosition.y = 140;
+    gstate->mortyPosition.dx = 0;
     gstate->mortyPosition.dy = 0;
     gstate->mortyPosition.onLedge = 0;
+    gstate->mortyPosition.animationFrame = 0;
+    gstate->mortyPosition.facingLeft = 1;
+    gstate->mortyPosition.slow = 1;
     
     for (int i=0; i<100; i++) {
         gstate->ledges[i].w = 256;
@@ -195,6 +235,10 @@ void loadGame(GameState *gstate){
         processVelocity(gstate);
         hitDetection(gstate);
     }
+    if (gstate->label) {
+        TTF_CloseFont(gstate->font);
+    }
+    TTF_Quit();
     SDL_DestroyTexture(gstate->morty[0]);
     SDL_DestroyTexture(gstate->morty[1]);
     SDL_DestroyRenderer(gstate->renderer);
