@@ -88,7 +88,7 @@ void renderGrpahics(GameState *gstate){
         SDL_SetRenderDrawColor(gstate->renderer, 172, 184, 247, 255);
         SDL_RenderClear(gstate->renderer);
         for (int i=0; i<100; i++) {
-            SDL_Rect ledgeRect ={gstate->scrollX + gstate->ledges[i].x, gstate->ledges[i].y, gstate->ledges[i].w, gstate->ledges[i].h};
+            SDL_Rect ledgeRect = {gstate->scrollX + gstate->ledges[i].x, gstate->ledges[i].y, gstate->ledges[i].w, gstate->ledges[i].h};
             SDL_RenderCopy(gstate->renderer, gstate->brick, NULL, &ledgeRect);
         }
         SDL_Rect mortyrect = {gstate->scrollX + gstate->mortyPosition.x, gstate->mortyPosition.y, 50, 68};
@@ -224,6 +224,12 @@ void loadGame(GameState *gstate){
         gstate->ledges[i].h = 64;
         gstate->ledges[i].x = i*256;
         gstate->ledges[i].y = 400;
+    }
+    for (int i=0; i<100; i++) {
+        gstate->deathLedges[i].w = 256;
+        gstate->deathLedges[i].h = 64;
+        gstate->deathLedges[i].x = i*256;
+        gstate->deathLedges[i].y = 400;
     }
     gstate->ledges[99].x = 350;
     gstate->ledges[99].y = 200;
